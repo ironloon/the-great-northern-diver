@@ -1,0 +1,104 @@
+# Great Northern Diver
+
+A small installer for a planning, execution, and critique prompt set. Writes managed files into `.agents` inside the target repo so the workflow lives next to the code it operates on.
+
+## Install
+
+One-shot scaffold. No global install or project dependency required.
+
+```bash
+npx gnd-workflow@latest install
+# or
+pnpm dlx gnd-workflow@latest install
+```
+
+Target another repo or pin a version:
+
+```bash
+npx gnd-workflow@latest install ../my-repo
+npx gnd-workflow@0.1.0 install
+```
+
+## What It Writes
+
+The installer writes managed files into `.agents/`. The workflow itself creates
+`.planning/` at runtime for structured plans:
+
+```text
+.agents/                  ← managed by the installer
+  .gnd-version.json
+  agents/
+    gnd-diver.agent.md
+    gnd-navigator.agent.md
+  skills/
+    gnd-chart/SKILL.md
+    gnd-critique/SKILL.md
+.planning/                ← created by gnd-chart and gnd-navigator
+  active-plan-*.md
+  archive/                ← completed plans moved here by gnd-critique
+```
+
+- `.gnd-version.json` records which gnd-workflow version scaffolded the files.
+- `gnd-chart` is the planning skill.
+- `gnd-navigator` dispatches approved plan legs.
+- `gnd-diver` executes one leg.
+- `gnd-critique` reviews delivered work and feeds corrections back into the process.
+
+All of these are plain text. Whether to track them in git is up to you:
+
+- **`.agents/`** — tracking lets collaborators (or yourself on another machine)
+  see the workflow files without re-running the installer. Ignoring keeps
+  generated files out of your repo; `npx gnd-workflow@latest install`
+  re-creates them.
+- **`.planning/`** — tracking preserves plan history alongside code. Ignoring
+  treats plans as ephemeral working state.
+
+Neither directory needs to be tracked or ignored for the workflow to function.
+
+## Philosophy
+
+This is an agentic-development-first workflow. The navigator commits and pushes
+directly to the default branch — no feature branches, no pull requests, no
+staging area. Plan → execute → critique → push, in a tight loop.
+
+That model works well for solo and hobby projects where you're the only
+collaborator and velocity matters more than ceremony
+([peninsular-reveries](https://github.com/ironloon/peninsular-reveries) is
+the project it was built around). It's a poor fit for teams that rely on branch
+protection, code review gates, or CI pipelines that run before merge.
+
+If your project needs those guardrails, you can still use the planning and
+critique skills on their own — just override the navigator's landing step to
+target a branch instead of pushing directly.
+
+## Updating
+
+```bash
+npx gnd-workflow@latest install
+```
+
+If a managed file already exists:
+
+- unchanged files are left alone
+- changed files trigger an interactive prompt before overwrite
+- non-interactive runs fail closed unless you pass `--force`
+
+Flags:
+
+- `--dry-run` shows what would change.
+- `--force` replaces differing managed files without prompting.
+- `--version` shows the installed version.
+- `-C, --cwd <path>` resolves the target project root from a specific working directory.
+
+The target project root must be a real directory; symlinked and junctioned roots are rejected.
+
+## Development
+
+```bash
+npm test
+node ./bin/gnd-workflow.js help
+node ./bin/gnd-workflow.js install --dry-run
+npm pack --dry-run
+```
+
+Maintainer release steps live in [RELEASING.md](RELEASING.md).

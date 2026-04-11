@@ -1,0 +1,48 @@
+{
+  "name": "gnd-workflow",
+  "version": "0.1.0",
+  "description": "Installable agent and skill files for coding projects.",
+  "type": "module",
+  "bin": {
+    "gnd-workflow": "bin/gnd-workflow.js"
+  },
+  "exports": {
+    ".": "./src/install.js"
+  },
+  "files": [
+    "bin",
+    "src/!(*.test|*-test-helpers).js",
+    "templates",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test src/**/*.test.js package-smoke.test.js",
+    "prepublishOnly": "npm test"
+  },
+  "keywords": [
+    "workflow",
+    "planning",
+    "orchestration",
+    "critique",
+    "project-planning",
+    "agent-workflow",
+    "developer-workflow",
+    "great-northern-diver"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ironloon/the-great-northern-diver.git"
+  },
+  "homepage": "https://github.com/ironloon/the-great-northern-diver#readme",
+  "bugs": {
+    "url": "https://github.com/ironloon/the-great-northern-diver/issues"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

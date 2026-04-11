@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [22, 24]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Validate package
+        run: npm test
+
+      - name: Check CLI help
+        run: node ./bin/gnd-workflow.js help
+
+      - name: Check published tarball
+        run: npm pack --dry-run
+
+  validate-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Validate package
+        run: npm test
+
+      - name: Check CLI help
+        run: node ./bin/gnd-workflow.js help
+
+      - name: Check published tarball
+        run: npm pack --dry-run

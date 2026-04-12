@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { ADAPTERS, DEFAULT_ADAPTER, MANAGED_FILES, installWorkflow } from "./install.js";
 import { fileExists, normalizePath } from "./install-test-helpers.js";
 
@@ -90,6 +90,61 @@ test("installWorkflow rejects managed file paths that are directories", async ()
       /Managed file paths must be regular files, not a directory\./
     );
   } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("installWorkflow rejects concurrent installs to the same project root", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "gnd-workflow-"));
+
+  try {
+    await mkdir(tempRoot, { recursive: true });
+    await writeFile(path.join(tempRoot, ".gnd-install.lock"), "pid: 0\nstarted: 2025-01-01T00:00:00.000Z\n", { flag: "wx" });
+
+    await assert.rejects(
+      installWorkflow({ projectRoot: tempRoot }),
+      /Another install appears to be in progress/
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("installWorkflow cleans up the lock file after a successful install", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "gnd-workflow-"));
+
+  try {
+    await installWorkflow({ projectRoot: tempRoot });
+
+    assert.equal(await fileExists(path.join(tempRoot, ".gnd-install.lock")), false);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("installWorkflow rolls back written files when a later write fails", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "gnd-workflow-"));
+  const chartSkillPath = path.join(tempRoot, defaultInstallDir, "skills", "gnd-chart", "SKILL.md");
+
+  try {
+    await installWorkflow({ projectRoot: tempRoot });
+
+    const firstFilePath = path.join(tempRoot, defaultInstallDir, "agents", "gnd-diver.agent.md");
+    await writeFile(firstFilePath, "user edit\n", "utf8");
+    await writeFile(chartSkillPath, "user edit\n", "utf8");
+    await chmod(chartSkillPath, 0o444);
+
+    await assert.rejects(
+      installWorkflow({ projectRoot: tempRoot, force: true }),
+      (error) => {
+        assert.match(error.message, /Failed to write/);
+        return true;
+      }
+    );
+
+    assert.equal(await readFile(firstFilePath, "utf8"), "user edit\n", "rolled-back file should be restored to previous content");
+  } finally {
+    try { await chmod(chartSkillPath, 0o666); } catch { /* allow cleanup */ }
     await rm(tempRoot, { recursive: true, force: true });
   }
 });

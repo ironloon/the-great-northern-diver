@@ -13,6 +13,32 @@ function isPermissionError(error) {
   return error && (error.code === "EACCES" || error.code === "EPERM" || error.code === "EROFS");
 }
 
+const LOCK_FILENAME = ".gnd-install.lock";
+
+async function acquireInstallLock(dir) {
+  const lockPath = path.join(dir, LOCK_FILENAME);
+
+  try {
+    await writeFile(lockPath, `pid: ${process.pid}\nstarted: ${new Date().toISOString()}\n`, { flag: "wx" });
+  } catch (error) {
+    if (error?.code === "EEXIST") {
+      throw new Error(`Another install appears to be in progress. If this is stale, remove '${lockPath}' and retry.`);
+    }
+
+    throw error;
+  }
+
+  return lockPath;
+}
+
+async function releaseInstallLock(lockPath) {
+  try {
+    await unlink(lockPath);
+  } catch {
+    // Best-effort cleanup; the lock file is transient.
+  }
+}
+
 const moduleDir = import.meta.dirname;
 const TEMPLATE_ROOT = path.resolve(moduleDir, "..", "templates", "workflow");
 const packageJsonPath = path.resolve(moduleDir, "..", "package.json");
@@ -91,7 +117,16 @@ async function resolveInstallRoot(projectRoot, installDir) {
   };
 }
 
+function assertSafeFrontmatterValue(value, label) {
+  if (typeof value !== "string" || /[\n\r"]/.test(value) || value.includes("---")) {
+    throw new Error(`${label} contains characters unsafe for YAML frontmatter.`);
+  }
+}
+
 function injectFrontmatterProvenance(content, version, adapterName) {
+  assertSafeFrontmatterValue(version, "Package version");
+  assertSafeFrontmatterValue(adapterName, "Adapter name");
+
   const provenanceLine = `gnd-version: "${version}"\ngnd-adapter: "${adapterName}"`;
 
   if (content.startsWith("---\n")) {
@@ -198,76 +233,94 @@ export async function installWorkflow(options = {}) {
     confirmManagedFileConflict: options.confirmManagedFileConflict
   };
 
-  const managedFiles = [];
-
-  for (const entry of plan) {
-    const filePath = path.join(installRoot.absolutePath, entry.relativePath);
-    managedFiles.push(await prepareManagedFileWrite(filePath, entry.content, writeOptions));
+  if (!dryRun) {
+    await mkdir(projectRoot, { recursive: true });
   }
 
-  if (!dryRun) {
-    const writtenEntries = [];
+  let lockPath = null;
 
-    try {
-      for (const entry of managedFiles) {
-        if (entry.status !== "unchanged") {
-          const dir = path.dirname(entry.path);
+  try {
+    if (!dryRun) {
+      lockPath = await acquireInstallLock(projectRoot);
+    }
 
-          try {
-            await mkdir(dir, { recursive: true });
-          } catch (cause) {
-            const hint = isPermissionError(cause) ? " Check that you have write access to the project directory." : "";
-            throw new Error(`Failed to create directory '${toProjectRelativePath(projectRoot, dir)}': ${cause?.message ?? cause}${hint}`);
+    const managedFiles = [];
+
+    for (const entry of plan) {
+      const filePath = path.join(installRoot.absolutePath, entry.relativePath);
+      managedFiles.push(await prepareManagedFileWrite(filePath, entry.content, writeOptions));
+    }
+
+    if (!dryRun) {
+      const writtenEntries = [];
+
+      try {
+        for (const entry of managedFiles) {
+          if (entry.status !== "unchanged") {
+            const dir = path.dirname(entry.path);
+
+            try {
+              await mkdir(dir, { recursive: true });
+            } catch (cause) {
+              const hint = isPermissionError(cause) ? " Check that you have write access to the project directory." : "";
+              throw new Error(`Failed to create directory '${toProjectRelativePath(projectRoot, dir)}': ${cause?.message ?? cause}${hint}`);
+            }
+
+            try {
+              await writeFile(entry.path, entry.content, "utf8");
+            } catch (cause) {
+              const hint = isPermissionError(cause) ? " Check that you have write access to the project directory." : "";
+              throw new Error(`Failed to write '${toProjectRelativePath(projectRoot, entry.path)}': ${cause?.message ?? cause}${hint}`);
+            }
+
+            writtenEntries.push(entry);
           }
-
-          try {
-            await writeFile(entry.path, entry.content, "utf8");
-          } catch (cause) {
-            const hint = isPermissionError(cause) ? " Check that you have write access to the project directory." : "";
-            throw new Error(`Failed to write '${toProjectRelativePath(projectRoot, entry.path)}': ${cause?.message ?? cause}${hint}`);
-          }
-
-          writtenEntries.push(entry);
         }
-      }
-    } catch (writeError) {
-      const rollbackErrors = [];
+      } catch (writeError) {
+        const rollbackErrors = [];
 
-      for (const written of writtenEntries) {
-        try {
-          if (written.status === "created") {
-            await unlink(written.path);
-          } else if (written.previousContent !== undefined) {
-            await writeFile(written.path, written.previousContent, "utf8");
+        for (const written of writtenEntries) {
+          try {
+            if (written.status === "created") {
+              await unlink(written.path);
+            } else if (written.previousContent !== undefined) {
+              await writeFile(written.path, written.previousContent, "utf8");
+            }
+          } catch (rollbackError) {
+            rollbackErrors.push({ path: written.path, status: written.status, cause: rollbackError });
           }
-        } catch (rollbackError) {
-          rollbackErrors.push({ path: written.path, status: written.status, cause: rollbackError });
         }
-      }
 
-      if (rollbackErrors.length > 0) {
-        const unremoved = rollbackErrors
-          .filter((e) => e.status === "created")
-          .map((e) => toProjectRelativePath(projectRoot, e.path));
-        const unrestored = rollbackErrors
-          .filter((e) => e.status !== "created")
-          .map((e) => toProjectRelativePath(projectRoot, e.path));
-        const parts = [];
-        if (unremoved.length > 0) parts.push(`could not remove newly created: ${unremoved.join(", ")}`);
-        if (unrestored.length > 0) parts.push(`could not restore previous content: ${unrestored.join(", ")}`);
-        writeError.message += ` Rollback incomplete \u2014 ${parts.join("; ")}.`;
-      }
+        writeError.rollbackIncomplete = rollbackErrors.length > 0;
 
-      throw writeError;
+        if (rollbackErrors.length > 0) {
+          const unremoved = rollbackErrors
+            .filter((e) => e.status === "created")
+            .map((e) => toProjectRelativePath(projectRoot, e.path));
+          const unrestored = rollbackErrors
+            .filter((e) => e.status !== "created")
+            .map((e) => toProjectRelativePath(projectRoot, e.path));
+          const parts = [];
+          if (unremoved.length > 0) parts.push(`could not remove newly created: ${unremoved.join(", ")}`);
+          if (unrestored.length > 0) parts.push(`could not restore previous content: ${unrestored.join(", ")}`);
+          writeError.message += ` Rollback incomplete \u2014 ${parts.join("; ")}.`;
+        }
+
+        throw writeError;
+      }
+    }
+
+    return {
+      projectRoot,
+      installDir: installRoot.contentPath,
+      adapter: adapterName,
+      dryRun,
+      managedFiles: managedFiles.map(({ path: filePath, status }) => ({ path: filePath, status })),
+      conflicts: managedFiles.flatMap((entry) => entry.conflict ? [entry.conflict] : [])
+    };
+  } finally {
+    if (lockPath !== null) {
+      await releaseInstallLock(lockPath);
     }
   }
-
-  return {
-    projectRoot,
-    installDir: installRoot.contentPath,
-    adapter: adapterName,
-    dryRun,
-    managedFiles: managedFiles.map(({ path: filePath, status }) => ({ path: filePath, status })),
-    conflicts: managedFiles.flatMap((entry) => entry.conflict ? [entry.conflict] : [])
-  };
 }

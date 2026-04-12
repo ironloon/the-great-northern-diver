@@ -108,10 +108,10 @@ Gather Context → Interactive Review → Analysis → Findings → Apply
 5. **Inspect real surface** when applicable.
 
 6. **Read process files.** Targeted reads of:
-   - `.agents/skills/gnd-chart/SKILL.md`
-   - `.agents/skills/gnd-critique/SKILL.md`
-   - `.agents/agents/gnd-navigator.agent.md`
-   - `.agents/agents/gnd-diver.agent.md`
+   - `.github/skills/gnd-chart/SKILL.md`
+   - `.github/skills/gnd-critique/SKILL.md`
+   - `.github/agents/gnd-navigator.agent.md`
+   - `.github/agents/gnd-diver.agent.md`
 
 
 ### PC Phase 2 — Interactive Review

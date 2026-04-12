@@ -5,10 +5,11 @@ import path from "node:path";
 import { execFile } from "node:child_process";
 import { access, mkdir, mkdtemp, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
-import { DEFAULT_INSTALL_DIR, MANAGED_FILES, installWorkflow } from "./install.js";
+import { ADAPTERS, DEFAULT_ADAPTER, MANAGED_FILES, installWorkflow } from "./install.js";
 import { createDirectoryLink } from "./install-test-helpers.js";
 
 const execFileAsync = promisify(execFile);
+const DEFAULT_INSTALL_DIR = ADAPTERS[DEFAULT_ADAPTER].installDir;
 
 async function tryGetWindowsShortPath(filePath) {
   const { stdout } = await execFileAsync("cmd.exe", [
@@ -35,7 +36,7 @@ test("installWorkflow rejects installDir paths that point to regular files", asy
       installWorkflow({
         projectRoot: tempRoot
       }),
-      /installDir path '.agents' must point to a directory within the project root\./
+      /installDir path '.github' must point to a directory within the project root\./
     );
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
@@ -53,7 +54,7 @@ test("installWorkflow rejects managed roots that resolve through a symlink outsi
       installWorkflow({
         projectRoot: tempRoot
       }),
-      /installDir path '.agents' must stay within the project root\./
+      /installDir path '.github' must stay within the project root\./
     );
 
     assert.deepEqual(await readdir(outsideRoot), []);
@@ -75,7 +76,7 @@ test("installWorkflow dry-run rejects managed roots that resolve through a symli
         projectRoot: tempRoot,
         dryRun: true
       }),
-      /installDir path '.agents' must stay within the project root\./
+      /installDir path '.github' must stay within the project root\./
     );
 
     assert.deepEqual(await readdir(outsideRoot), []);
@@ -98,7 +99,7 @@ test("installWorkflow rejects managed roots that are symlinked or junctioned dir
       installWorkflow({
         projectRoot: tempRoot
       }),
-      /installDir path '.agents' cannot be a symlinked or junctioned directory\./
+      /installDir path '.github' cannot be a symlinked or junctioned directory\./
     );
   } finally {
     await rm(tempRoot, { recursive: true, force: true });

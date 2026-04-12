@@ -121,9 +121,12 @@ function formatConflictPrompt(conflict) {
 
 const DEFAULT_PROMPT_TIMEOUT_MS = 300_000;
 
+const PROMPT_TIMEOUT = Symbol.for("gnd.prompt.timeout");
+const PROMPT_INPUT_CLOSED = Symbol.for("gnd.prompt.inputClosed");
+
 function questionWithTtyLifecycle(prompt, input, message, timeoutMs) {
   if (input.readableEnded || input.destroyed) {
-    return Promise.resolve(null);
+    return Promise.resolve(PROMPT_INPUT_CLOSED);
   }
 
   return new Promise((resolve, reject) => {
@@ -149,16 +152,16 @@ function questionWithTtyLifecycle(prompt, input, message, timeoutMs) {
 
     const handleInputEnded = settle(() => {
       prompt.close();
-      resolve(null);
+      resolve(PROMPT_INPUT_CLOSED);
     });
     const handleInputClosed = settle(() => {
       prompt.close();
-      resolve(null);
+      resolve(PROMPT_INPUT_CLOSED);
     });
     const handleInputError = settle(reject);
     const handleTimeout = settle(() => {
       prompt.close();
-      resolve(null);
+      resolve(PROMPT_TIMEOUT);
     });
 
     input.once("end", handleInputEnded);
@@ -199,7 +202,12 @@ function createInteractiveConflictPrompter(input, output, options = {}) {
       while (true) {
         const answer = await questionWithTtyLifecycle(prompt, input, formatConflictPrompt(conflict), promptTimeoutMs);
 
-        if (answer === null) {
+        if (answer === PROMPT_TIMEOUT) {
+          output.write("\nPrompt timed out.\n");
+          return false;
+        }
+
+        if (answer === PROMPT_INPUT_CLOSED || answer === null) {
           return false;
         }
 

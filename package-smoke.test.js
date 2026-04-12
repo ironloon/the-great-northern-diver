@@ -92,7 +92,7 @@ test("packed tarball installs and exposes the intended CLI and library surface",
     await t.test("CLI help output describes the workflow", async () => {
       const { stdout: helpStdout } = await runInstalledCli(installedCliPath, ["help"], consumerRoot);
 
-      assert.match(helpStdout, /Writes managed agent files into \.agents/);
+      assert.match(helpStdout, /Writes managed agent and skill files/);
     });
 
     await t.test("CLI install --version works from the install command position", async () => {
@@ -106,18 +106,19 @@ test("packed tarball installs and exposes the intended CLI and library surface",
       const libraryScript = [
         'import path from "node:path";',
         'import { access } from "node:fs/promises";',
-      'import { DEFAULT_INSTALL_DIR, MANAGED_FILES, VERSION_FILE, installWorkflow } from "gnd-workflow";',
+      'import { ADAPTERS, DEFAULT_ADAPTER, MANAGED_FILES, installWorkflow } from "gnd-workflow";',
       'const projectRoot = path.join(process.cwd(), "tarball-project");',
       'const result = await installWorkflow({ projectRoot });',
-      'await access(path.join(projectRoot, DEFAULT_INSTALL_DIR, MANAGED_FILES[0]));',
-      'await access(path.join(projectRoot, DEFAULT_INSTALL_DIR, VERSION_FILE));',
-        'console.log(JSON.stringify({ installDir: result.installDir, managedCount: MANAGED_FILES.length }));'
+      'const installDir = ADAPTERS[DEFAULT_ADAPTER].installDir;',
+      'await access(path.join(projectRoot, installDir, MANAGED_FILES[0]));',
+        'console.log(JSON.stringify({ installDir: result.installDir, adapter: result.adapter, managedCount: MANAGED_FILES.length }));'
       ].join(" ");
 
       const { stdout: libraryStdout } = await runCommand(process.execPath, ["--input-type=module", "-e", libraryScript], consumerRoot);
       const libraryResult = JSON.parse(libraryStdout.trim());
 
-      assert.equal(libraryResult.installDir, ".agents");
+      assert.equal(libraryResult.installDir, ".github");
+      assert.equal(libraryResult.adapter, "vscode-github-copilot");
       assert.equal(libraryResult.managedCount, 4);
     });
   } finally {

@@ -1,10 +1,12 @@
 import path from "node:path";
 import { createInterface } from "node:readline/promises";
 import { parseArgs } from "node:util";
-import { DEFAULT_INSTALL_DIR, installWorkflow, readPackageVersion } from "./install.js";
+import { ADAPTERS, DEFAULT_ADAPTER, installWorkflow, readPackageVersion } from "./install.js";
 import { normalizePathForContent } from "./path-policy.js";
 
 function printHelp(stream) {
+  const adapterList = Object.keys(ADAPTERS).join(", ");
+
   stream.write(
     [
       "Great Northern Diver",
@@ -13,9 +15,11 @@ function printHelp(stream) {
       "  gnd-workflow install [project-root] [options]",
       "  gnd-workflow help",
       "",
-      `Writes managed agent files into ${normalizePathForContent(DEFAULT_INSTALL_DIR)} in the target project.`,
+      "Writes managed agent and skill files into the target project.",
       "",
       "Options:",
+      `  --adapter <name>              Runtime adapter (default: ${DEFAULT_ADAPTER})`,
+      `                                Available: ${adapterList}`,
       "  --force                       Replace differing managed files without prompting",
       "  --dry-run                     Print the install plan without writing files",
       "  -C, --cwd <path>              Resolve paths from a specific working directory",
@@ -66,6 +70,9 @@ function parseInstallArgs(argv, cwd) {
       force: {
         type: "boolean"
       },
+      adapter: {
+        type: "string"
+      },
       cwd: {
         type: "string",
         short: "C"
@@ -88,6 +95,7 @@ function parseInstallArgs(argv, cwd) {
     projectRoot: baseProjectRoot,
     dryRun: values["dry-run"] ?? false,
     force: values.force ?? false,
+    adapter: values.adapter,
     version: values.version ?? false,
     help: values.help ?? false
   };
@@ -222,6 +230,7 @@ function createInteractiveConflictPrompter(input, output, options = {}) {
 function printInstallResult(stream, result) {
   stream.write("Great Northern Diver install summary\n\n");
   stream.write(`Project root: ${result.projectRoot}\n`);
+  stream.write(`Adapter: ${result.adapter}\n`);
   stream.write(`Install root: ${normalizePathForContent(result.installDir)}\n`);
 
   if (result.dryRun) {

@@ -1,6 +1,8 @@
 # Great Northern Diver
 
-A small installer for a planning, execution, and critique prompt set. Writes managed files into `.agents` inside the target repo so the workflow lives next to the code it operates on.
+A small installer for a planning, execution, and critique prompt set. Adapters
+control where files land so the workflow integrates with your editor's agent
+discovery.
 
 ## Install
 
@@ -21,12 +23,12 @@ npx gnd-workflow@0.1.0 install
 
 ## What It Writes
 
-The installer writes managed files into `.agents/`. The workflow itself creates
-`.planning/` at runtime for structured plans:
+The installer writes managed files through an **adapter** that decides where
+each artifact type goes. The default adapter is `vscode-github-copilot`, which
+targets `.github/`:
 
 ```text
-.agents/                  ← managed by the installer
-  .gnd-version.json
+.github/                  ← managed by the installer (adapter-controlled)
   agents/
     gnd-diver.agent.md
     gnd-navigator.agent.md
@@ -38,7 +40,9 @@ The installer writes managed files into `.agents/`. The workflow itself creates
   archive/                ← completed plans moved here by gnd-critique
 ```
 
-- `.gnd-version.json` records which gnd-workflow version scaffolded the files.
+Each managed file carries `gnd-version` and `gnd-adapter` in its YAML
+frontmatter so you can tell which package version wrote it and which adapter
+was used.
 - `gnd-chart` is the planning skill.
 - `gnd-navigator` dispatches approved plan legs.
 - `gnd-diver` executes one leg.
@@ -46,9 +50,9 @@ The installer writes managed files into `.agents/`. The workflow itself creates
 
 All of these are plain text. Whether to track them in git is up to you:
 
-- **`.agents/`** — tracking lets collaborators (or yourself on another machine)
-  see the workflow files without re-running the installer. Ignoring keeps
-  generated files out of your repo; `npx gnd-workflow@latest install`
+- **Managed files** — tracking lets collaborators (or yourself on another
+  machine) see the workflow files without re-running the installer. Ignoring
+  keeps generated files out of your repo; `npx gnd-workflow@latest install`
   re-creates them.
 - **`.planning/`** — tracking preserves plan history alongside code. Ignoring
   treats plans as ephemeral working state.
@@ -85,6 +89,7 @@ If a managed file already exists:
 
 Flags:
 
+- `--adapter <name>` selects a runtime adapter (default: `vscode-github-copilot`).
 - `--dry-run` shows what would change.
 - `--force` replaces differing managed files without prompting.
 - `--version` shows the installed version.

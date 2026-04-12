@@ -22,9 +22,11 @@ export async function readPackageVersion() {
   return JSON.parse(raw).version;
 }
 
-export const DEFAULT_INSTALL_DIR = ".agents";
+export const ADAPTERS = Object.freeze({
+  "vscode-github-copilot": { installDir: ".github" }
+});
 
-export const VERSION_FILE = ".gnd-version.json";
+export const DEFAULT_ADAPTER = "vscode-github-copilot";
 
 export const MANAGED_FILES = Object.freeze([
   "agents/gnd-diver.agent.md",
@@ -78,10 +80,10 @@ async function readTextIfExists(filePath, displayPath) {
   }
 }
 
-async function resolveInstallRoot(projectRoot) {
+async function resolveInstallRoot(projectRoot, installDir) {
   await ensureProjectRootCanBeCreated(projectRoot);
 
-  const installRoot = await resolveManagedRoot(projectRoot, DEFAULT_INSTALL_DIR, "installDir");
+  const installRoot = await resolveManagedRoot(projectRoot, installDir, "installDir");
 
   return {
     absolutePath: installRoot,
@@ -89,7 +91,17 @@ async function resolveInstallRoot(projectRoot) {
   };
 }
 
-async function createInstallPlan() {
+function injectFrontmatterProvenance(content, version, adapterName) {
+  const provenanceLine = `gnd-version: "${version}"\ngnd-adapter: "${adapterName}"`;
+
+  if (content.startsWith("---\n")) {
+    return content.replace("---\n", `---\n${provenanceLine}\n`);
+  }
+
+  return `---\n${provenanceLine}\n---\n${content}`;
+}
+
+async function createInstallPlan(version, adapterName) {
   const files = [];
 
   for (const relativePath of MANAGED_FILES) {
@@ -108,7 +120,7 @@ async function createInstallPlan() {
 
     files.push({
       relativePath,
-      content: raw.replaceAll("\r\n", "\n")
+      content: injectFrontmatterProvenance(raw.replaceAll("\r\n", "\n"), version, adapterName)
     });
   }
 
@@ -169,9 +181,16 @@ export async function installWorkflow(options = {}) {
   const projectRoot = path.resolve(options.projectRoot ?? process.cwd());
   const dryRun = options.dryRun ?? false;
   const force = options.force ?? false;
+  const adapterName = options.adapter ?? DEFAULT_ADAPTER;
+  const adapter = ADAPTERS[adapterName];
 
-  const installRoot = await resolveInstallRoot(projectRoot);
-  const plan = await createInstallPlan();
+  if (!adapter) {
+    throw new Error(`Unknown adapter '${adapterName}'. Available adapters: ${Object.keys(ADAPTERS).join(", ")}`);
+  }
+
+  const installRoot = await resolveInstallRoot(projectRoot, adapter.installDir);
+  const packageVersion = await readPackageVersion();
+  const plan = await createInstallPlan(packageVersion, adapterName);
   const writeOptions = {
     projectRoot,
     dryRun,
@@ -185,21 +204,6 @@ export async function installWorkflow(options = {}) {
     const filePath = path.join(installRoot.absolutePath, entry.relativePath);
     managedFiles.push(await prepareManagedFileWrite(filePath, entry.content, writeOptions));
   }
-
-  const packageVersion = await readPackageVersion();
-  const versionFilePath = path.join(installRoot.absolutePath, VERSION_FILE);
-  const versionDisplayPath = toProjectRelativePath(projectRoot, versionFilePath);
-  const versionContent = JSON.stringify({ installedFrom: packageVersion }, null, 2) + "\n";
-  const existingVersionContent = await readTextIfExists(versionFilePath, versionDisplayPath);
-
-  managedFiles.push({
-    path: versionFilePath,
-    status: existingVersionContent === versionContent ? "unchanged"
-      : existingVersionContent === null ? "created" : "updated",
-    content: versionContent,
-    ...(existingVersionContent !== null && existingVersionContent !== versionContent
-      ? { previousContent: existingVersionContent } : {})
-  });
 
   if (!dryRun) {
     const writtenEntries = [];
@@ -261,6 +265,7 @@ export async function installWorkflow(options = {}) {
   return {
     projectRoot,
     installDir: installRoot.contentPath,
+    adapter: adapterName,
     dryRun,
     managedFiles: managedFiles.map(({ path: filePath, status }) => ({ path: filePath, status })),
     conflicts: managedFiles.flatMap((entry) => entry.conflict ? [entry.conflict] : [])

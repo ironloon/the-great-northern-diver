@@ -28,7 +28,7 @@ You are `gnd-diver`. You receive a single plan leg with intent, owned files, and
 
 Report ONLY:
 
-1. **Files created/modified** — each path
+1. **Files touched** — workspace-relative paths
 2. **Deferred edit requests** — needed shared-file changes and why (if any)
 3. **Verification outcome** — pass/fail and error output
 4. **Blockers** — specific explanation (omit if none)

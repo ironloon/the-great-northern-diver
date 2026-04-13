@@ -182,10 +182,7 @@ test("main reports dry-run conflicts in the install summary", async () => {
         adapter: "vscode-github-copilot",
         dryRun: true,
         managedFiles: [
-          {
-            path: path.join(tempRoot, ".github", "skills", "gnd-critique", "SKILL.md"),
-            status: "updated"
-          }
+          path.join(tempRoot, ".github", "skills", "gnd-critique", "SKILL.md")
         ],
         conflicts: [
           {
@@ -198,7 +195,7 @@ test("main reports dry-run conflicts in the install summary", async () => {
 
     assert.equal(exitCode, 0);
     assert.equal(stderr.read(), "");
-    assert.match(stdout.read(), /Conflicts requiring confirmation without --force:\n\s+overwrite\s+\.github\/skills\/gnd-critique\/SKILL\.md/);
+    assert.match(stdout.read(), /Conflicts requiring --force to overwrite:\n\s+\.github\/skills\/gnd-critique\/SKILL\.md/);
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
@@ -263,7 +260,7 @@ test("main can confirm overwrites through the CLI io hook", async () => {
     assert.equal(conflicts.length, 1);
     assert.equal(conflicts[0].action, "overwrite");
     assert.equal(conflicts[0].relativePath, ".github/skills/gnd-critique/SKILL.md");
-    assert.match(stdout.read(), /updated\s+\.github\/skills\/gnd-critique\/SKILL\.md/);
+    assert.match(stdout.read(), /\.github\/skills\/gnd-critique\/SKILL\.md/);
     assert.notEqual(await readFile(critiquePath, "utf8"), "user improvement\n");
   } finally {
     await rm(tempRoot, { recursive: true, force: true });

@@ -162,7 +162,7 @@ After all complete: deferred edits → full validation → delivery verification
 - **One module or feature per leg** when files are tightly coupled. Don't split types and state that always change together.
 - **Split by independence** when modules don't share types.
 - **Maximize parallelism** — minimize serial dependency chains.
-- **≤15 owned files per leg.** Larger → find a seam to split on.
+- **≤15 owned files per leg.** Larger → find a seam to split on. If splitting would break semantic cohesion, keep the leg intact and note why in the intent.
 - **Shared files** (`package.json`, `build.ts`, routers, shared styles) never appear in owned sets. Use deferred shared edits.
 
 ---
@@ -175,7 +175,7 @@ Leg intents must embed relevant project constraints so sub-agents don't rediscov
 
 ## Dispatch Order Section
 
-List legs in dispatch order. Note dependencies and parallelism. End with:
+List legs in dispatch order. Note dependencies and parallelism. The dispatch order must be acyclic — no circular dependencies between legs. End with:
 
 ```markdown
 After all complete: deferred edits → `## Project Context` full-validation → delivery verification → commit → push.

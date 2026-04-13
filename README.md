@@ -1,8 +1,7 @@
 # Great Northern Diver
 
-A small installer for a planning, execution, and critique prompt set. Adapters
-control where files land so the workflow integrates with your editor's agent
-discovery.
+A small installer for a planning, execution, and critique prompt set that
+integrates with VS Code's GitHub Copilot agent discovery.
 
 ## Install
 
@@ -23,12 +22,10 @@ npx gnd-workflow@0.1.0 install
 
 ## What It Writes
 
-The installer writes managed files through an **adapter** that decides where
-each artifact type goes. The default adapter is `vscode-github-copilot`, which
-targets `.github/`:
+The installer writes managed files into `.github/`:
 
 ```text
-.github/                  ← managed by the installer (adapter-controlled)
+.github/                  ← managed by the installer
   agents/
     gnd-diver.agent.md
     gnd-navigator.agent.md
@@ -41,8 +38,7 @@ targets `.github/`:
 ```
 
 Each managed file carries `gnd-version` and `gnd-adapter` in its YAML
-frontmatter so you can tell which package version wrote it and which adapter
-was used.
+frontmatter so you can tell which package version wrote it.
 - `gnd-chart` is the planning skill.
 - `gnd-navigator` dispatches approved plan legs.
 - `gnd-diver` executes one leg.
@@ -82,12 +78,11 @@ npx gnd-workflow@latest install
 ```
 
 If a managed file already exists and differs from the packaged version, the
-installer prompts before overwriting. Non-interactive runs fail unless you pass
-`--force`.
+installer refuses to overwrite it. Use `--force` to replace it, or
+`--dry-run` to preview what would change.
 
 Flags:
 
-- `--adapter <name>` selects a runtime adapter (default: `vscode-github-copilot`).
 - `--dry-run` shows what would change.
 - `--force` replaces differing managed files without prompting. **Overwrites are not backed up.**
 - `--version` shows the installed version.

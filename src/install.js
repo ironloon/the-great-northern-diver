@@ -194,7 +194,7 @@ async function prepareManagedFileWrite(filePath, content, options) {
   const existingContent = await readTextIfExists(filePath, displayPath);
 
   if (existingContent === content) {
-    return { path: filePath, status: "unchanged", content };
+    return { path: filePath, content, needsWrite: false };
   }
 
   if (existingContent !== null && !options.force) {
@@ -207,12 +207,7 @@ async function prepareManagedFileWrite(filePath, content, options) {
     };
 
     if (options.dryRun) {
-      return {
-        path: filePath,
-        status: "updated",
-        content,
-        conflict
-      };
+      return { path: filePath, content, needsWrite: true, conflict };
     }
 
     const confirmed = typeof options.confirmManagedFileConflict === "function"
@@ -228,12 +223,7 @@ async function prepareManagedFileWrite(filePath, content, options) {
     }
   }
 
-  return {
-    path: filePath,
-    status: existingContent === null ? "created" : "updated",
-    content,
-    ...(existingContent !== null ? { previousContent: existingContent } : {})
-  };
+  return { path: filePath, content, needsWrite: true };
 }
 
 export async function installWorkflow(options = {}) {
@@ -276,61 +266,24 @@ export async function installWorkflow(options = {}) {
     }
 
     if (!dryRun) {
-      const writtenEntries = [];
+      for (const entry of managedFiles) {
+        if (!entry.needsWrite) continue;
 
-      try {
-        for (const entry of managedFiles) {
-          if (entry.status !== "unchanged") {
-            const dir = path.dirname(entry.path);
+        const dir = path.dirname(entry.path);
 
-            try {
-              await mkdir(dir, { recursive: true });
-            } catch (cause) {
-              const hint = isPermissionError(cause) ? " Check that you have write access to the project directory." : "";
-              throw new Error(`Failed to create directory '${toProjectRelativePath(projectRoot, dir)}': ${cause?.message ?? cause}${hint}`);
-            }
-
-            try {
-              await writeFile(entry.path, entry.content, "utf8");
-            } catch (cause) {
-              const hint = isPermissionError(cause) ? " Check that you have write access to the project directory." : "";
-              throw new Error(`Failed to write '${toProjectRelativePath(projectRoot, entry.path)}': ${cause?.message ?? cause}${hint}`);
-            }
-
-            writtenEntries.push(entry);
-          }
-        }
-      } catch (writeError) {
-        const rollbackErrors = [];
-
-        for (const written of writtenEntries) {
-          try {
-            if (written.status === "created") {
-              await unlink(written.path);
-            } else if (written.previousContent !== undefined) {
-              await writeFile(written.path, written.previousContent, "utf8");
-            }
-          } catch (rollbackError) {
-            rollbackErrors.push({ path: written.path, status: written.status, cause: rollbackError });
-          }
+        try {
+          await mkdir(dir, { recursive: true });
+        } catch (cause) {
+          const hint = isPermissionError(cause) ? " Check that you have write access to the project directory." : "";
+          throw new Error(`Failed to create directory '${toProjectRelativePath(projectRoot, dir)}': ${cause?.message ?? cause}${hint}`);
         }
 
-        writeError.rollbackIncomplete = rollbackErrors.length > 0;
-
-        if (rollbackErrors.length > 0) {
-          const unremoved = rollbackErrors
-            .filter((e) => e.status === "created")
-            .map((e) => toProjectRelativePath(projectRoot, e.path));
-          const unrestored = rollbackErrors
-            .filter((e) => e.status !== "created")
-            .map((e) => toProjectRelativePath(projectRoot, e.path));
-          const parts = [];
-          if (unremoved.length > 0) parts.push(`could not remove newly created: ${unremoved.join(", ")}`);
-          if (unrestored.length > 0) parts.push(`could not restore previous content: ${unrestored.join(", ")}`);
-          writeError.message += ` Rollback incomplete -- ${parts.join("; ")}.`;
+        try {
+          await writeFile(entry.path, entry.content, "utf8");
+        } catch (cause) {
+          const hint = isPermissionError(cause) ? " Check that you have write access to the project directory." : "";
+          throw new Error(`Failed to write '${toProjectRelativePath(projectRoot, entry.path)}': ${cause?.message ?? cause}${hint}`);
         }
-
-        throw writeError;
       }
     }
 
@@ -339,7 +292,7 @@ export async function installWorkflow(options = {}) {
       installDir: installRoot.contentPath,
       adapter: adapterName,
       dryRun,
-      managedFiles: managedFiles.map(({ path: filePath, status }) => ({ path: filePath, status })),
+      managedFiles: managedFiles.map(({ path: filePath }) => filePath),
       conflicts: managedFiles.flatMap((entry) => entry.conflict ? [entry.conflict] : [])
     };
   } finally {

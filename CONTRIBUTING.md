@@ -54,8 +54,13 @@ runtime behavior.
    confirms write behavior and prompts.
 
 3. **Editor / runtime behavior** — the workflow targets VS Code with GitHub
-   Copilot. If a template change affects agent or skill dispatching, verify the
-   behavior inside VS Code after installing into a test repo.
+   Copilot. If a template change affects agent or skill dispatching:
+
+   - Dry-run the install to confirm file selection.
+   - Install into a test repo and open it in VS Code.
+   - Verify agent discovery picks up the changed files.
+   - Trigger the affected workflow (e.g., invoke `@gnd-navigator`) and confirm
+     the updated behavior.
 
 ## Runtime and Adapter Expectations
 

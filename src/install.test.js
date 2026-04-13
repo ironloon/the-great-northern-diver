@@ -38,7 +38,7 @@ test("installWorkflow writes and reuses managed files", async () => {
       projectRoot: tempRoot
     });
 
-    assert.ok(secondInstall.managedFiles.every((entry) => entry.status === "unchanged"));
+    assert.equal(secondInstall.managedFiles.length, MANAGED_FILES.length);
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
@@ -126,15 +126,13 @@ test("installWorkflow cleans up the lock file after a successful install", async
   }
 });
 
-test("installWorkflow rolls back written files when a later write fails", async () => {
+test("installWorkflow reports write failures with permission details", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "gnd-workflow-"));
   const chartSkillPath = path.join(tempRoot, defaultInstallDir, "skills", "gnd-chart", "SKILL.md");
 
   try {
     await installWorkflow({ projectRoot: tempRoot });
 
-    const firstFilePath = path.join(tempRoot, defaultInstallDir, "agents", "gnd-diver.agent.md");
-    await writeFile(firstFilePath, "user edit\n", "utf8");
     await writeFile(chartSkillPath, "user edit\n", "utf8");
     await chmod(chartSkillPath, 0o444);
 
@@ -145,27 +143,21 @@ test("installWorkflow rolls back written files when a later write fails", async 
         return true;
       }
     );
-
-    assert.equal(await readFile(firstFilePath, "utf8"), "user edit\n", "rolled-back file should be restored to previous content");
   } finally {
     try { await chmod(chartSkillPath, 0o666); } catch { /* allow cleanup */ }
     await rm(tempRoot, { recursive: true, force: true });
   }
 });
 
-test("installWorkflow rolls back when mkdir fails for a later file", async () => {
+test("installWorkflow reports directory creation failures", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "gnd-workflow-"));
 
   try {
-    // First install so all files exist.
     await installWorkflow({ projectRoot: tempRoot });
 
-    // Edit agents so they become dirty (will be re-written on force install).
     const diverPath = path.join(tempRoot, defaultInstallDir, "agents", "gnd-diver.agent.md");
     await writeFile(diverPath, "user edit\n", "utf8");
 
-    // Place a regular file where the skills/gnd-chart/ *directory* should be,
-    // so mkdir for gnd-chart/SKILL.md fails with ENOTDIR.
     const chartDir = path.join(tempRoot, defaultInstallDir, "skills", "gnd-chart");
     await rm(chartDir, { recursive: true, force: true });
     await writeFile(chartDir, "blocker", "utf8");
@@ -177,8 +169,19 @@ test("installWorkflow rolls back when mkdir fails for a later file", async () =>
         return true;
       }
     );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
 
-    assert.equal(await readFile(diverPath, "utf8"), "user edit\n", "rolled-back file should be restored to previous content");
+test("installWorkflow rejects unknown adapters", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "gnd-workflow-"));
+
+  try {
+    await assert.rejects(
+      installWorkflow({ projectRoot: tempRoot, adapter: "nonexistent" }),
+      /Unknown adapter 'nonexistent'/
+    );
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }

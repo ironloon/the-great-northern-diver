@@ -34,15 +34,15 @@ function formatPath(projectRoot, filePath) {
   return path.relative(projectRoot, filePath).replaceAll("\\", "/") || ".";
 }
 
-function printFileGroup(stream, title, projectRoot, entries) {
-  if (entries.length === 0) {
+function printManagedFiles(stream, projectRoot, filePaths) {
+  if (filePaths.length === 0) {
     return;
   }
 
-  stream.write(`${title}:\n`);
+  stream.write("Managed files:\n");
 
-  for (const entry of entries) {
-    stream.write(`  ${entry.status.padEnd(9)} ${formatPath(projectRoot, entry.path)}\n`);
+  for (const filePath of filePaths) {
+    stream.write(`  ${formatPath(projectRoot, filePath)}\n`);
   }
 }
 
@@ -51,10 +51,10 @@ function printConflicts(stream, conflicts) {
     return;
   }
 
-  stream.write("Conflicts requiring confirmation without --force:\n");
+  stream.write("Conflicts requiring --force to overwrite:\n");
 
   for (const conflict of conflicts) {
-    stream.write(`  overwrite ${conflict.relativePath}\n`);
+    stream.write(`  ${conflict.relativePath}\n`);
   }
 }
 
@@ -108,7 +108,7 @@ function parseInstallArgs(argv, cwd) {
 }
 
 function formatErrorMessage(error) {
-  return error?.message !== undefined ? String(error.message) : String(error);
+  return error instanceof Error ? error.message : String(error);
 }
 
 function formatConflictPrompt(conflict) {
@@ -246,7 +246,7 @@ function printInstallResult(stream, result) {
   }
 
   stream.write("\n");
-  printFileGroup(stream, "Managed files", result.projectRoot, result.managedFiles);
+  printManagedFiles(stream, result.projectRoot, result.managedFiles);
   printConflicts(stream, result.conflicts ?? []);
 }
 

@@ -79,7 +79,7 @@ Fix bugs and UX issues in severity order (blockers first). Design questions → 
 3. Verify delivery yourself — don't ask the user to check first.
 4. Tell user any needed refresh/update step only if the surface requires it.
 5. User re-verifies. Persistent findings → another Phase 4 round.
-6. **Archive.** Create `.planning/archive/<YYYY-MM-DD>-field-review-<slug>.md` with findings + implementation + verification.
+6. **Archive.** Create `.planning/archive/<YYYY-MM-DD>-<HHmm>-field-review-<slug>.md` with findings + implementation + verification.
 7. Update process files if findings reveal a gap.
 
 ---
@@ -185,7 +185,7 @@ Get user approval before applying.
 
 1. **Append** `## Critique` section to the plan file.
 2. **Update process files** with approved changes. All files are eligible (`gnd-chart`, `gnd-critique`, `gnd-navigator`, `gnd-diver`, project-local files). Only where findings warrant it.
-3. **Archive** the plan → `.planning/archive/<YYYY-MM-DD>-<slug>.md`.
+3. **Archive** the plan → `.planning/archive/<YYYY-MM-DD>-<HHmm>-<slug>.md`.
 4. **Report** what was updated and the archive path.
 5. **Field review handoff** if the holding list is non-empty.
 

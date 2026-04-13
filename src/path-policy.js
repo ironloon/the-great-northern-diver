@@ -69,6 +69,7 @@ async function tryRealpath(filePath) {
 
 async function hasSymbolicLinkAncestor(filePath) {
   let currentPath = path.resolve(filePath);
+  let depth = 0;
 
   while (true) {
     const stats = await tryLstat(currentPath);
@@ -79,7 +80,7 @@ async function hasSymbolicLinkAncestor(filePath) {
 
     const parentPath = path.dirname(currentPath);
 
-    if (parentPath === currentPath) {
+    if (parentPath === currentPath || ++depth > 256) {
       return false;
     }
 

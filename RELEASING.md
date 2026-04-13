@@ -5,7 +5,8 @@ publishing.
 
 ## One-Time Setup
 
-If `gnd-workflow` does not exist on npm yet, publish it once manually.
+If `gnd-workflow` does not exist on npm yet, run `npm login` and publish it
+once manually with `npm publish`.
 
 Then configure trusted publishing on npm:
 

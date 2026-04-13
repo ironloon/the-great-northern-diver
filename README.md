@@ -81,17 +81,15 @@ target a branch instead of pushing directly.
 npx gnd-workflow@latest install
 ```
 
-If a managed file already exists:
-
-- unchanged files are left alone
-- changed files trigger an interactive prompt before overwrite
-- non-interactive runs fail closed unless you pass `--force`
+If a managed file already exists and differs from the packaged version, the
+installer prompts before overwriting. Non-interactive runs fail unless you pass
+`--force`.
 
 Flags:
 
 - `--adapter <name>` selects a runtime adapter (default: `vscode-github-copilot`).
 - `--dry-run` shows what would change.
-- `--force` replaces differing managed files without prompting.
+- `--force` replaces differing managed files without prompting. **Overwrites are not backed up.**
 - `--version` shows the installed version.
 - `-C, --cwd <path>` resolves the target project root from a specific working directory.
 

@@ -122,7 +122,7 @@ async function readTextIfExists(filePath, displayPath) {
   try {
     return await readFile(filePath, "utf8");
   } catch (error) {
-    if (error && error.code === "ENOENT") {
+    if (error && (error.code === "ENOENT" || error.code === "ENOTDIR")) {
       return null;
     }
 

@@ -47,7 +47,7 @@ async function tryLstat(filePath) {
   try {
     return await lstat(filePath);
   } catch (error) {
-    if (error && error.code === "ENOENT") {
+    if (error && (error.code === "ENOENT" || error.code === "ENOTDIR")) {
       return null;
     }
 

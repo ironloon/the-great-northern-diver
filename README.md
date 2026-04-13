@@ -17,7 +17,7 @@ Target another repo or pin a version:
 
 ```bash
 npx gnd-workflow@latest install ../my-repo
-npx gnd-workflow@0.1.0 install
+npx gnd-workflow@0.2.0 install
 ```
 
 ## What It Writes

@@ -15,14 +15,38 @@ function isPermissionError(error) {
 
 const LOCK_FILENAME = ".gnd-install.lock";
 
+function isProcessRunning(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function readLockPid(lockPath) {
+  try {
+    const content = await readFile(lockPath, "utf8");
+    const match = content.match(/^pid: (\d+)/m);
+    return match ? Number(match[1]) : null;
+  } catch {
+    return null;
+  }
+}
+
 async function acquireInstallLock(dir) {
   const lockPath = path.join(dir, LOCK_FILENAME);
 
   try {
-    await writeFile(lockPath, `pid: ${process.pid}\nstarted: ${new Date().toISOString()}\n`, { flag: "wx" });
+    await writeFile(lockPath, `version: 1\npid: ${process.pid}\nstarted: ${new Date().toISOString()}\n`, { flag: "wx" });
   } catch (error) {
     if (error?.code === "EEXIST") {
-      throw new Error(`Another install appears to be in progress. If this is stale, remove '${lockPath}' and retry.`);
+      const lockedPid = await readLockPid(lockPath);
+      const staleHint = lockedPid !== null && !isProcessRunning(lockedPid)
+        ? ` The lock was left by PID ${lockedPid}, which is no longer running; it is safe to remove.`
+        : "";
+
+      throw new Error(`Another install appears to be in progress. If this is stale, remove '${lockPath}' and retry.${staleHint}`);
     }
 
     throw error;
@@ -303,7 +327,7 @@ export async function installWorkflow(options = {}) {
           const parts = [];
           if (unremoved.length > 0) parts.push(`could not remove newly created: ${unremoved.join(", ")}`);
           if (unrestored.length > 0) parts.push(`could not restore previous content: ${unrestored.join(", ")}`);
-          writeError.message += ` Rollback incomplete \u2014 ${parts.join("; ")}.`;
+          writeError.message += ` Rollback incomplete -- ${parts.join("; ")}.`;
         }
 
         throw writeError;

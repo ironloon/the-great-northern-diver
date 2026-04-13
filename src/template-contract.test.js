@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { readFile } from "node:fs/promises";
+import { MANAGED_FILES } from "./install.js";
 
 const workflowTemplateRoot = path.resolve(import.meta.dirname, "..", "templates", "workflow");
 const navigatorTemplatePath = path.join(workflowTemplateRoot, "agents", "gnd-navigator.agent.md");
@@ -39,4 +40,13 @@ test("navigator template enforces in-progress marking before dispatch", async ()
   assert.notEqual(markInProgressIndex, -1, "template should contain mark in-progress step");
   assert.notEqual(dispatchIndex, -1, "template should contain dispatch step");
   assert.ok(markInProgressIndex < dispatchIndex, "mark in-progress must precede dispatch");
+});
+
+test("templates do not ship with YAML frontmatter (injected at install time)", async () => {
+  for (const relativePath of MANAGED_FILES) {
+    const content = await readFile(path.join(workflowTemplateRoot, relativePath), "utf8");
+
+    assert.ok(!content.startsWith("---\n"),
+      `${relativePath} must not contain frontmatter; provenance is injected by the installer`);
+  }
 });

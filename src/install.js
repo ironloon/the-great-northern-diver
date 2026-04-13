@@ -1,5 +1,5 @@
 import path from "node:path";
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import {
   describePathKind,
   ensureManagedPathWithinProjectRoot,
@@ -13,70 +13,17 @@ function isPermissionError(error) {
   return error && (error.code === "EACCES" || error.code === "EPERM" || error.code === "EROFS");
 }
 
-const LOCK_FILENAME = ".gnd-install.lock";
-
-function isProcessRunning(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function readLockPid(lockPath) {
-  try {
-    const content = await readFile(lockPath, "utf8");
-    const match = content.match(/^pid: (\d+)/m);
-    return match ? Number(match[1]) : null;
-  } catch {
-    return null;
-  }
-}
-
-async function acquireInstallLock(dir) {
-  const lockPath = path.join(dir, LOCK_FILENAME);
-
-  try {
-    await writeFile(lockPath, `version: 1\npid: ${process.pid}\nstarted: ${new Date().toISOString()}\n`, { flag: "wx" });
-  } catch (error) {
-    if (error?.code === "EEXIST") {
-      const lockedPid = await readLockPid(lockPath);
-      const staleHint = lockedPid !== null && !isProcessRunning(lockedPid)
-        ? ` The lock was left by PID ${lockedPid}, which is no longer running; it is safe to remove.`
-        : "";
-
-      throw new Error(`Another install appears to be in progress. If this is stale, remove '${lockPath}' and retry.${staleHint}`);
-    }
-
-    throw error;
-  }
-
-  return lockPath;
-}
-
-async function releaseInstallLock(lockPath) {
-  try {
-    await unlink(lockPath);
-  } catch {
-    // Best-effort cleanup; the lock file is transient.
-  }
-}
-
 const moduleDir = import.meta.dirname;
 const TEMPLATE_ROOT = path.resolve(moduleDir, "..", "templates", "workflow");
 const packageJsonPath = path.resolve(moduleDir, "..", "package.json");
+
+const INSTALL_DIR = ".github";
+const ADAPTER_NAME = "vscode-github-copilot";
 
 export async function readPackageVersion() {
   const raw = await readFile(packageJsonPath, "utf8");
   return JSON.parse(raw).version;
 }
-
-export const ADAPTERS = Object.freeze({
-  "vscode-github-copilot": { installDir: ".github" }
-});
-
-export const DEFAULT_ADAPTER = "vscode-github-copilot";
 
 export const MANAGED_FILES = Object.freeze([
   "agents/gnd-diver.agent.md",
@@ -84,29 +31,6 @@ export const MANAGED_FILES = Object.freeze([
   "skills/gnd-chart/SKILL.md",
   "skills/gnd-critique/SKILL.md"
 ]);
-
-/**
- * @typedef {Object} ManagedFileConflict
- * @property {"overwrite"} action
- * @property {string} path
- * @property {string} relativePath
- * @property {string} existingContent
- * @property {string} nextContent
- */
-
-/**
- * @callback ConfirmManagedFileConflict
- * @param {ManagedFileConflict} conflict
- * @returns {boolean|Promise<boolean>}
- */
-
-/**
- * @typedef {Object} InstallOptions
- * @property {string} [projectRoot]
- * @property {boolean} [dryRun]
- * @property {boolean} [force]
- * @property {ConfirmManagedFileConflict} [confirmManagedFileConflict]
- */
 
 async function ensureRegularFileOrMissing(filePath, displayPath) {
   const kind = await getExistingPathKind(filePath);
@@ -130,10 +54,10 @@ async function readTextIfExists(filePath, displayPath) {
   }
 }
 
-async function resolveInstallRoot(projectRoot, installDir) {
+async function resolveInstallRoot(projectRoot) {
   await ensureProjectRootCanBeCreated(projectRoot);
 
-  const installRoot = await resolveManagedRoot(projectRoot, installDir, "installDir");
+  const installRoot = await resolveManagedRoot(projectRoot, INSTALL_DIR, "installDir");
 
   return {
     absolutePath: installRoot,
@@ -160,7 +84,7 @@ function injectFrontmatterProvenance(content, version, adapterName) {
   return `---\n${provenanceLine}\n---\n${content}`;
 }
 
-async function createInstallPlan(version, adapterName) {
+async function createInstallPlan(version) {
   const files = [];
 
   for (const relativePath of MANAGED_FILES) {
@@ -179,7 +103,7 @@ async function createInstallPlan(version, adapterName) {
 
     files.push({
       relativePath,
-      content: injectFrontmatterProvenance(raw.replaceAll("\r\n", "\n"), version, adapterName)
+      content: injectFrontmatterProvenance(raw.replaceAll("\r\n", "\n"), version, ADAPTER_NAME)
     });
   }
 
@@ -200,27 +124,14 @@ async function prepareManagedFileWrite(filePath, content, options) {
   if (existingContent !== null && !options.force) {
     const conflict = {
       action: "overwrite",
-      path: filePath,
       relativePath: displayPath,
-      existingContent,
-      nextContent: content
     };
 
     if (options.dryRun) {
       return { path: filePath, content, needsWrite: true, conflict };
     }
 
-    const confirmed = typeof options.confirmManagedFileConflict === "function"
-      ? (await options.confirmManagedFileConflict(conflict)) === true
-      : false;
-
-    if (!confirmed) {
-      if (typeof options.confirmManagedFileConflict === "function") {
-        throw new Error(`Install canceled after declining to overwrite ${displayPath}. No files were changed.`);
-      }
-
-      throw new Error(`Refusing to overwrite ${displayPath}. Re-run with --force to replace it.`);
-    }
+    throw new Error(`Refusing to overwrite ${displayPath}. Re-run with --force to replace it.`);
   }
 
   return { path: filePath, content, needsWrite: true };
@@ -230,74 +141,50 @@ export async function installWorkflow(options = {}) {
   const projectRoot = path.resolve(options.projectRoot ?? process.cwd());
   const dryRun = options.dryRun ?? false;
   const force = options.force ?? false;
-  const adapterName = options.adapter ?? DEFAULT_ADAPTER;
-  const adapter = ADAPTERS[adapterName];
 
-  if (!adapter) {
-    throw new Error(`Unknown adapter '${adapterName}'. Available adapters: ${Object.keys(ADAPTERS).join(", ")}`);
-  }
-
-  const installRoot = await resolveInstallRoot(projectRoot, adapter.installDir);
+  const installRoot = await resolveInstallRoot(projectRoot);
   const packageVersion = await readPackageVersion();
-  const plan = await createInstallPlan(packageVersion, adapterName);
-  const writeOptions = {
-    projectRoot,
-    dryRun,
-    force,
-    confirmManagedFileConflict: options.confirmManagedFileConflict
-  };
+  const plan = await createInstallPlan(packageVersion);
+  const writeOptions = { projectRoot, dryRun, force };
 
   if (!dryRun) {
     await mkdir(projectRoot, { recursive: true });
   }
 
-  let lockPath = null;
+  const managedFiles = [];
 
-  try {
-    if (!dryRun) {
-      lockPath = await acquireInstallLock(projectRoot);
-    }
+  for (const entry of plan) {
+    const filePath = path.join(installRoot.absolutePath, entry.relativePath);
+    managedFiles.push(await prepareManagedFileWrite(filePath, entry.content, writeOptions));
+  }
 
-    const managedFiles = [];
+  if (!dryRun) {
+    for (const entry of managedFiles) {
+      if (!entry.needsWrite) continue;
 
-    for (const entry of plan) {
-      const filePath = path.join(installRoot.absolutePath, entry.relativePath);
-      managedFiles.push(await prepareManagedFileWrite(filePath, entry.content, writeOptions));
-    }
+      const dir = path.dirname(entry.path);
 
-    if (!dryRun) {
-      for (const entry of managedFiles) {
-        if (!entry.needsWrite) continue;
+      try {
+        await mkdir(dir, { recursive: true });
+      } catch (cause) {
+        const hint = isPermissionError(cause) ? " Check that you have write access to the project directory." : "";
+        throw new Error(`Failed to create directory '${toProjectRelativePath(projectRoot, dir)}': ${cause?.message ?? cause}${hint}`);
+      }
 
-        const dir = path.dirname(entry.path);
-
-        try {
-          await mkdir(dir, { recursive: true });
-        } catch (cause) {
-          const hint = isPermissionError(cause) ? " Check that you have write access to the project directory." : "";
-          throw new Error(`Failed to create directory '${toProjectRelativePath(projectRoot, dir)}': ${cause?.message ?? cause}${hint}`);
-        }
-
-        try {
-          await writeFile(entry.path, entry.content, "utf8");
-        } catch (cause) {
-          const hint = isPermissionError(cause) ? " Check that you have write access to the project directory." : "";
-          throw new Error(`Failed to write '${toProjectRelativePath(projectRoot, entry.path)}': ${cause?.message ?? cause}${hint}`);
-        }
+      try {
+        await writeFile(entry.path, entry.content, "utf8");
+      } catch (cause) {
+        const hint = isPermissionError(cause) ? " Check that you have write access to the project directory." : "";
+        throw new Error(`Failed to write '${toProjectRelativePath(projectRoot, entry.path)}': ${cause?.message ?? cause}${hint}`);
       }
     }
-
-    return {
-      projectRoot,
-      installDir: installRoot.contentPath,
-      adapter: adapterName,
-      dryRun,
-      managedFiles: managedFiles.map(({ path: filePath }) => filePath),
-      conflicts: managedFiles.flatMap((entry) => entry.conflict ? [entry.conflict] : [])
-    };
-  } finally {
-    if (lockPath !== null) {
-      await releaseInstallLock(lockPath);
-    }
   }
+
+  return {
+    projectRoot,
+    installDir: installRoot.contentPath,
+    dryRun,
+    managedFiles: managedFiles.map(({ path: filePath }) => filePath),
+    conflicts: managedFiles.flatMap((entry) => entry.conflict ? [entry.conflict] : [])
+  };
 }

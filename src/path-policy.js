@@ -67,55 +67,10 @@ async function tryRealpath(filePath) {
   }
 }
 
-async function hasSymbolicLinkAncestor(filePath) {
-  let currentPath = path.resolve(filePath);
-  let depth = 0;
-
-  while (true) {
-    const stats = await tryLstat(currentPath);
-
-    if (stats !== null && stats.isSymbolicLink()) {
-      return true;
-    }
-
-    const parentPath = path.dirname(currentPath);
-
-    if (parentPath === currentPath || ++depth > 256) {
-      return false;
-    }
-
-    currentPath = parentPath;
-  }
-}
-
 export async function getExistingPathKind(filePath) {
   const stats = await tryLstat(filePath);
 
   return stats === null ? null : getPathKindFromStats(stats);
-}
-
-async function findNearestExistingAncestor(filePath) {
-  let currentPath = filePath;
-
-  while (true) {
-    const stats = await tryLstat(currentPath);
-
-    if (stats !== null) {
-      return {
-        path: currentPath,
-        realpath: await realpath(currentPath),
-        kind: getPathKindFromStats(stats)
-      };
-    }
-
-    const parentPath = path.dirname(currentPath);
-
-    if (parentPath === currentPath) {
-      return null;
-    }
-
-    currentPath = parentPath;
-  }
 }
 
 export async function ensureManagedPathWithinProjectRoot(projectRoot, candidatePath, errorMessage) {
@@ -129,15 +84,49 @@ export async function ensureManagedPathWithinProjectRoot(projectRoot, candidateP
     return;
   }
 
-  const nearestExistingAncestor = await findNearestExistingAncestor(candidatePath);
+  const candidateKind = await getExistingPathKind(candidatePath);
 
-  if (nearestExistingAncestor !== null) {
-    if (nearestExistingAncestor.path !== candidatePath && nearestExistingAncestor.kind === "symlink") {
+  if (candidateKind === "symlink") {
+    throw new Error(errorMessage);
+  }
+
+  if (candidateKind !== null) {
+    const realCandidate = await tryRealpath(candidatePath);
+
+    if (realCandidate !== null && !isWithinProjectRoot(realProjectRoot, realCandidate)) {
       throw new Error(errorMessage);
     }
 
-    if (!isWithinProjectRoot(realProjectRoot, nearestExistingAncestor.realpath)) {
+    return;
+  }
+
+  // Candidate doesn't exist yet — walk up to find the nearest existing ancestor
+  // and verify it resolves within the project root.
+  let current = candidatePath;
+
+  while (true) {
+    const parent = path.dirname(current);
+
+    if (parent === current) {
+      break;
+    }
+
+    current = parent;
+
+    const parentKind = await getExistingPathKind(current);
+
+    if (parentKind === "symlink") {
       throw new Error(errorMessage);
+    }
+
+    if (parentKind !== null) {
+      const realParent = await tryRealpath(current);
+
+      if (realParent !== null && !isWithinProjectRoot(realProjectRoot, realParent)) {
+        throw new Error(errorMessage);
+      }
+
+      break;
     }
   }
 }
@@ -154,17 +143,17 @@ export async function ensureProjectRootCanBeCreated(projectRoot) {
       throw new Error(`Project root '${projectRoot}' must be a directory, not ${describePathKind(projectRootKind)}.`);
     }
 
-    if (await hasSymbolicLinkAncestor(projectRoot)) {
+    // Verify realpath resolves to the same location (catches symlink ancestors
+    // and Windows 8.3 short-path spellings are tolerated since both resolve
+    // to the same realpath).
+    const realProjectRoot = await realpath(projectRoot);
+    const resolvedProjectRoot = await realpath(path.resolve(projectRoot));
+
+    if (realProjectRoot !== resolvedProjectRoot) {
       throw new Error(`Project root '${projectRoot}' cannot be a symlinked or junctioned directory. Use its real path.`);
     }
 
     return;
-  }
-
-  const nearestExistingAncestor = await findNearestExistingAncestor(projectRoot);
-
-  if (nearestExistingAncestor !== null && await hasSymbolicLinkAncestor(nearestExistingAncestor.path)) {
-    throw new Error(`Project root '${projectRoot}' cannot be created through a symlinked or junctioned ancestor. Create the directory first or use its real path.`);
   }
 }
 

@@ -4,11 +4,21 @@ import os from "node:os";
 import path from "node:path";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { main } from "./cli.js";
-import {
-  createBufferedStream,
-  createTtyInputStream,
-  createTtyOutputStream
-} from "./cli-test-helpers.js";
+
+function createBufferedStream() {
+  let output = "";
+
+  return {
+    stream: {
+      write(chunk) {
+        output += chunk;
+      }
+    },
+    read() {
+      return output;
+    }
+  };
+}
 
 test("main --version prints the package version", async () => {
   const stdout = createBufferedStream();
@@ -46,7 +56,7 @@ test("main install --version prints the package version without running install"
   assert.equal(stdout.read(), `${pkg.version}\n`);
 });
 
-test("main prints help output with adapter info", async () => {
+test("main prints help output", async () => {
   const stdout = createBufferedStream();
   const stderr = createBufferedStream();
 
@@ -58,8 +68,7 @@ test("main prints help output with adapter info", async () => {
   assert.equal(exitCode, 0);
   assert.equal(stderr.read(), "");
   assert.match(stdout.read(), /Writes managed agent and skill files/);
-  assert.match(stdout.read(), /--adapter/);
-  assert.equal(stdout.read().includes("--tool"), false);
+  assert.equal(stdout.read().includes("--adapter"), false);
 });
 
 test("main resolves relative --cwd against the provided current working directory", async () => {
@@ -102,7 +111,6 @@ test("main forwards install options through to installWorkflow", async () => {
         return {
           projectRoot: options.projectRoot,
           installDir: ".github",
-          adapter: "vscode-github-copilot",
           dryRun: options.dryRun,
           managedFiles: [],
           conflicts: []
@@ -116,7 +124,6 @@ test("main forwards install options through to installWorkflow", async () => {
       projectRoot: path.resolve(tempRoot, "repo"),
       dryRun: true,
       force: false,
-      adapter: undefined,
       version: false,
       help: false
     });
@@ -143,7 +150,6 @@ test("main forwards --force through to installWorkflow", async () => {
         return {
           projectRoot: options.projectRoot,
           installDir: ".github",
-          adapter: "vscode-github-copilot",
           dryRun: false,
           managedFiles: [],
           conflicts: []
@@ -157,7 +163,6 @@ test("main forwards --force through to installWorkflow", async () => {
       projectRoot: path.resolve(tempRoot, "repo"),
       dryRun: false,
       force: true,
-      adapter: undefined,
       version: false,
       help: false
     });
@@ -179,7 +184,6 @@ test("main reports dry-run conflicts in the install summary", async () => {
       installWorkflow: async () => ({
         projectRoot: tempRoot,
         installDir: ".github",
-        adapter: "vscode-github-copilot",
         dryRun: true,
         managedFiles: [
           path.join(tempRoot, ".github", "skills", "gnd-critique", "SKILL.md")
@@ -224,239 +228,65 @@ test("main reports installer failures without assuming Error instances", async (
   }
 });
 
-async function installWithManagedConflict(tempRoot, stdout, stderr) {
-  const critiquePath = path.join(tempRoot, ".github", "skills", "gnd-critique", "SKILL.md");
-
-  await main(["install"], {
-    cwd: tempRoot,
-    stdout,
-    stderr
-  });
-
-  await writeFile(critiquePath, "user improvement\n", "utf8");
-  return critiquePath;
-}
-
-test("main can confirm overwrites through the CLI io hook", async () => {
+test("main refuses conflicting installs without --force", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "gnd-cli-"));
   const stdout = createBufferedStream();
   const stderr = createBufferedStream();
-  const conflicts = [];
 
   try {
-    const critiquePath = await installWithManagedConflict(tempRoot, stdout.stream, stderr.stream);
+    await main(["install"], {
+      cwd: tempRoot,
+      stdout: stdout.stream,
+      stderr: stderr.stream
+    });
+
+    const critiquePath = path.join(tempRoot, ".github", "skills", "gnd-critique", "SKILL.md");
+    await writeFile(critiquePath, "user improvement\n", "utf8");
+
+    const retryStdout = createBufferedStream();
+    const retryStderr = createBufferedStream();
 
     const exitCode = await main(["install"], {
       cwd: tempRoot,
+      stdout: retryStdout.stream,
+      stderr: retryStderr.stream
+    });
+
+    assert.equal(exitCode, 1);
+    assert.equal(retryStdout.read(), "");
+    assert.match(retryStderr.read(), /Re-run with --force to replace it\./);
+    assert.equal(await readFile(critiquePath, "utf8"), "user improvement\n");
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("main --force overwrites conflicting managed files", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "gnd-cli-"));
+  const stdout = createBufferedStream();
+  const stderr = createBufferedStream();
+
+  try {
+    await main(["install"], {
+      cwd: tempRoot,
       stdout: stdout.stream,
-      stderr: stderr.stream,
-      confirmManagedFileConflict: async (conflict) => {
-        conflicts.push(conflict);
-        return true;
-      }
+      stderr: stderr.stream
+    });
+
+    const critiquePath = path.join(tempRoot, ".github", "skills", "gnd-critique", "SKILL.md");
+    await writeFile(critiquePath, "user improvement\n", "utf8");
+
+    const retryStdout = createBufferedStream();
+    const retryStderr = createBufferedStream();
+
+    const exitCode = await main(["install", "--force"], {
+      cwd: tempRoot,
+      stdout: retryStdout.stream,
+      stderr: retryStderr.stream
     });
 
     assert.equal(exitCode, 0);
-    assert.equal(conflicts.length, 1);
-    assert.equal(conflicts[0].action, "overwrite");
-    assert.equal(conflicts[0].relativePath, ".github/skills/gnd-critique/SKILL.md");
-    assert.match(stdout.read(), /\.github\/skills\/gnd-critique\/SKILL\.md/);
     assert.notEqual(await readFile(critiquePath, "utf8"), "user improvement\n");
-  } finally {
-    await rm(tempRoot, { recursive: true, force: true });
-  }
-});
-
-test("main aborts cleanly when a conflict confirmation is declined", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "gnd-cli-"));
-  const stdout = createBufferedStream();
-  const stderr = createBufferedStream();
-
-  try {
-    const critiquePath = await installWithManagedConflict(tempRoot, stdout.stream, stderr.stream);
-
-    const exitCode = await main(["install"], {
-      cwd: tempRoot,
-      stdout: stdout.stream,
-      stderr: stderr.stream,
-      confirmManagedFileConflict: async () => false
-    });
-
-    assert.equal(exitCode, 1);
-    assert.match(stderr.read(), /Install canceled after declining to overwrite .*SKILL\.md\. No files were changed\./);
-    assert.equal(await readFile(critiquePath, "utf8"), "user improvement\n");
-  } finally {
-    await rm(tempRoot, { recursive: true, force: true });
-  }
-});
-
-test("main refuses conflicting installs in non-interactive mode without --force", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "gnd-cli-"));
-  const installStdout = createBufferedStream();
-  const installStderr = createBufferedStream();
-  const syncStdout = createBufferedStream();
-  const syncStderr = createBufferedStream();
-
-  try {
-    const critiquePath = await installWithManagedConflict(tempRoot, installStdout.stream, installStderr.stream);
-
-    const exitCode = await main(["install"], {
-      cwd: tempRoot,
-      stdout: syncStdout.stream,
-      stderr: syncStderr.stream
-    });
-
-    assert.equal(exitCode, 1);
-    assert.equal(syncStdout.read(), "");
-    assert.match(syncStderr.read(), /Re-run with --force to replace it\./);
-    assert.equal(await readFile(critiquePath, "utf8"), "user improvement\n");
-  } finally {
-    await rm(tempRoot, { recursive: true, force: true });
-  }
-});
-
-test("main accepts overwrite confirmations through an interactive TTY prompt", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "gnd-cli-"));
-  const stdout = createBufferedStream();
-  const installStderr = createBufferedStream();
-  const stderr = createTtyOutputStream();
-  const stdin = createTtyInputStream();
-
-  try {
-    const critiquePath = await installWithManagedConflict(tempRoot, stdout.stream, installStderr.stream);
-
-    const exitCodePromise = main(["install"], {
-      cwd: tempRoot,
-      stdout: stdout.stream,
-      stderr: stderr.stream,
-      stdin: stdin.stream
-    });
-
-    await stderr.waitFor(/Replace it\? \[y\]es\/\[n\]o\/\[a\]ll:/);
-    stdin.write("y\n");
-
-    const exitCode = await exitCodePromise;
-
-    assert.equal(exitCode, 0);
-    assert.match(stderr.read(), /Replace it\? \[y\]es\/\[n\]o\/\[a\]ll:/);
-    assert.notEqual(await readFile(critiquePath, "utf8"), "user improvement\n");
-  } finally {
-    stdin.close();
-    stderr.close();
-    await rm(tempRoot, { recursive: true, force: true });
-  }
-});
-
-test("main declines overwrite confirmations through an interactive TTY prompt", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "gnd-cli-"));
-  const stdout = createBufferedStream();
-  const installStderr = createBufferedStream();
-  const stderr = createTtyOutputStream();
-  const stdin = createTtyInputStream();
-
-  try {
-    const critiquePath = await installWithManagedConflict(tempRoot, stdout.stream, installStderr.stream);
-
-    const exitCodePromise = main(["install"], {
-      cwd: tempRoot,
-      stdout: stdout.stream,
-      stderr: stderr.stream,
-      stdin: stdin.stream
-    });
-
-    await stderr.waitFor(/Replace it\? \[y\]es\/\[n\]o\/\[a\]ll:/);
-    stdin.write("n\n");
-
-    const exitCode = await exitCodePromise;
-
-    assert.equal(exitCode, 1);
-    assert.match(stderr.read(), /Replace it\? \[y\]es\/\[n\]o\/\[a\]ll:/);
-    assert.equal(await readFile(critiquePath, "utf8"), "user improvement\n");
-  } finally {
-    stdin.close();
-    stderr.close();
-    await rm(tempRoot, { recursive: true, force: true });
-  }
-});
-
-test("main fails closed when an interactive TTY stdin ends before answering", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "gnd-cli-"));
-  const stdout = createBufferedStream();
-  const installStderr = createBufferedStream();
-  const stderr = createTtyOutputStream();
-  const stdin = createTtyInputStream();
-
-  try {
-    const critiquePath = await installWithManagedConflict(tempRoot, stdout.stream, installStderr.stream);
-
-    const exitCodePromise = main(["install"], {
-      cwd: tempRoot,
-      stdout: stdout.stream,
-      stderr: stderr.stream,
-      stdin: stdin.stream
-    });
-
-    await stderr.waitFor(/Replace it\? \[y\]es\/\[n\]o\/\[a\]ll:/);
-    stdin.end();
-
-    const exitCode = await exitCodePromise;
-
-    assert.equal(exitCode, 1);
-    assert.match(stderr.read(), /Install canceled after declining to overwrite .*SKILL\.md\. No files were changed\./);
-    assert.equal(await readFile(critiquePath, "utf8"), "user improvement\n");
-  } finally {
-    stdin.close();
-    stderr.close();
-    await rm(tempRoot, { recursive: true, force: true });
-  }
-});
-
-test("main fails closed when an interactive TTY prompt times out", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "gnd-cli-"));
-  const stdout = createBufferedStream();
-  const installStderr = createBufferedStream();
-  const stderr = createTtyOutputStream();
-  const stdin = createTtyInputStream();
-
-  try {
-    const critiquePath = await installWithManagedConflict(tempRoot, stdout.stream, installStderr.stream);
-
-    const exitCode = await main(["install"], {
-      cwd: tempRoot,
-      stdout: stdout.stream,
-      stderr: stderr.stream,
-      stdin: stdin.stream,
-      promptTimeoutMs: 50
-    });
-
-    assert.equal(exitCode, 1);
-    assert.match(stderr.read(), /Install canceled after declining to overwrite .*SKILL\.md\. No files were changed\./);
-    assert.equal(await readFile(critiquePath, "utf8"), "user improvement\n");
-  } finally {
-    stdin.close();
-    stderr.close();
-    await rm(tempRoot, { recursive: true, force: true });
-  }
-});
-
-test("main rejects truthy non-boolean confirmation as a decline", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "gnd-cli-"));
-  const stdout = createBufferedStream();
-  const stderr = createBufferedStream();
-
-  try {
-    const critiquePath = await installWithManagedConflict(tempRoot, stdout.stream, stderr.stream);
-
-    const exitCode = await main(["install"], {
-      cwd: tempRoot,
-      stdout: stdout.stream,
-      stderr: stderr.stream,
-      confirmManagedFileConflict: async () => "yes"
-    });
-
-    assert.equal(exitCode, 1);
-    assert.match(stderr.read(), /Install canceled after declining to overwrite .*SKILL\.md\. No files were changed\./);
-    assert.equal(await readFile(critiquePath, "utf8"), "user improvement\n");
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }

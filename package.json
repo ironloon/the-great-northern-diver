@@ -1,6 +1,6 @@
 {
   "name": "gnd-workflow",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Installable agent and skill files for coding projects.",
   "type": "module",
   "bin": {

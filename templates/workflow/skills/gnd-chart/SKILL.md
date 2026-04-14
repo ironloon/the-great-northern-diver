@@ -14,6 +14,10 @@ Plan multi-step work as structured legs for `@gnd-navigator` to dispatch to `gnd
 
 Break the user's goal into bounded, reviewable legs. Project constraints come from project guidance sources, not hidden assumptions.
 
+## Project-Local Overrides
+
+If `LOCAL.md` exists in this skill's directory, read it and apply its contents as project-specific extensions or overrides to these instructions. Local overrides take precedence when they conflict with base instructions.
+
 ## Project Context Resolution
 
 Identify authoritative guidance in priority order:

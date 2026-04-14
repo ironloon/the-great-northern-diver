@@ -8,6 +8,10 @@ disable-model-invocation: true
 
 Evaluate delivered work against the plan. Validation and delivery checks come from the plan's `## Project Context`, workspace instructions, READMEs, and skills.
 
+## Project-Local Overrides
+
+If `LOCAL.md` exists in this skill's directory, read it and apply its contents as project-specific extensions or overrides to these instructions. Local overrides take precedence when they conflict with base instructions.
+
 Two modes — detect from invocation:
 
 | Flag | Mode | When |
@@ -80,7 +84,7 @@ Fix bugs and UX issues in severity order (blockers first). Design questions → 
 4. Tell user any needed refresh/update step only if the surface requires it.
 5. User re-verifies. Persistent findings → another Phase 4 round.
 6. **Archive.** Create `.planning/archive/<YYYY-MM-DD>-<HHmm>-field-review-<slug>.md` with findings + implementation + verification.
-7. Update process files if findings reveal a gap.
+7. Update process files if findings reveal a gap. Write corrections to supplementary local files (`LOCAL.md` for skills, `.local.md` for agents) rather than editing base managed files.
 
 ---
 
@@ -108,10 +112,10 @@ Gather Context → Interactive Review → Analysis → Findings → Apply
 5. **Inspect real surface** when applicable.
 
 6. **Read process files.** Targeted reads of:
-   - `.github/skills/gnd-chart/SKILL.md`
-   - `.github/skills/gnd-critique/SKILL.md`
-   - `.github/agents/gnd-navigator.agent.md`
-   - `.github/agents/gnd-diver.agent.md`
+   - `.github/skills/gnd-chart/SKILL.md` (and `LOCAL.md` in the same directory if it exists)
+   - `.github/skills/gnd-critique/SKILL.md` (and `LOCAL.md` in the same directory if it exists)
+   - `.github/agents/gnd-navigator.agent.md` (and `gnd-navigator.local.md` in the same directory if it exists)
+   - `.github/agents/gnd-diver.agent.md` (and `gnd-diver.local.md` in the same directory if it exists)
 
 
 ### PC Phase 2 — Interactive Review
@@ -176,7 +180,7 @@ Present structured findings before applying:
 - [Out-of-scope observations from Phase 2]
 
 ### Process File Updates
-- [Each file + what changes]
+- [Each supplementary local file + what changes]
 ```
 
 Get user approval before applying.
@@ -184,7 +188,7 @@ Get user approval before applying.
 ### PC Phase 5 — Apply
 
 1. **Append** `## Critique` section to the plan file.
-2. **Update process files** with approved changes. All files are eligible (`gnd-chart`, `gnd-critique`, `gnd-navigator`, `gnd-diver`, project-local files). Only where findings warrant it.
+2. **Update process files** with approved changes. Write corrections to supplementary local files (`LOCAL.md` for skills, `.local.md` for agents) rather than editing base managed files. Base files are overwritten on package update; local files are preserved. Create the local file if it doesn't yet exist. Only where findings warrant it.
 3. **Archive** the plan → `.planning/archive/<YYYY-MM-DD>-<HHmm>-<slug>.md`.
 4. **Report** what was updated and the archive path.
 5. **Field review handoff** if the holding list is non-empty.

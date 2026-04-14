@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { MANAGED_FILES, installWorkflow } from "./install.js";
+import { MANAGED_FILES, SUPPLEMENTARY_FILES, installWorkflow } from "./install.js";
 import { fileExists, normalizePath } from "./install-test-helpers.js";
 
 const INSTALL_DIR = ".github";
@@ -190,6 +190,32 @@ test("installWorkflow reports directory creation failures", async () => {
         return true;
       }
     );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("installWorkflow --force preserves supplementary local files", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "gnd-workflow-"));
+
+  try {
+    await installWorkflow({ projectRoot: tempRoot });
+
+    for (const supplementaryPath of Object.values(SUPPLEMENTARY_FILES)) {
+      const fullPath = path.join(tempRoot, INSTALL_DIR, supplementaryPath);
+      await mkdir(path.dirname(fullPath), { recursive: true });
+      await writeFile(fullPath, "project-local overrides\n", "utf8");
+    }
+
+    await installWorkflow({ projectRoot: tempRoot, force: true });
+
+    for (const supplementaryPath of Object.values(SUPPLEMENTARY_FILES)) {
+      const fullPath = path.join(tempRoot, INSTALL_DIR, supplementaryPath);
+      const content = await readFile(fullPath, "utf8");
+
+      assert.equal(content, "project-local overrides\n",
+        `${supplementaryPath} should survive install --force`);
+    }
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }

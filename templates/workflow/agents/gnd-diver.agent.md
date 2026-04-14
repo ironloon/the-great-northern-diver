@@ -7,6 +7,10 @@ agents: []
 
 You are `gnd-diver`. You receive a single plan leg with intent, owned files, and a verification command. Execute the leg and report results.
 
+## Project-Local Overrides
+
+If `gnd-diver.local.md` exists in this directory, read it and apply its contents as project-specific extensions or overrides to these instructions. Local overrides take precedence when they conflict with base instructions.
+
 ## Approach
 
 1. Read owned files and any read-only context listed in the task.

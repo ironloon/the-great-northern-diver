@@ -32,6 +32,13 @@ export const MANAGED_FILES = Object.freeze([
   "skills/gnd-critique/SKILL.md"
 ]);
 
+export const SUPPLEMENTARY_FILES = Object.freeze({
+  "agents/gnd-diver.agent.md": "agents/gnd-diver.local.md",
+  "agents/gnd-navigator.agent.md": "agents/gnd-navigator.local.md",
+  "skills/gnd-chart/SKILL.md": "skills/gnd-chart/LOCAL.md",
+  "skills/gnd-critique/SKILL.md": "skills/gnd-critique/LOCAL.md"
+});
+
 async function ensureRegularFileOrMissing(filePath, displayPath) {
   const kind = await getExistingPathKind(filePath);
 

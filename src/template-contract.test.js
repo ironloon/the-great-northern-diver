@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { readFile } from "node:fs/promises";
-import { MANAGED_FILES } from "./install.js";
+import { MANAGED_FILES, SUPPLEMENTARY_FILES } from "./install.js";
 
 const workflowTemplateRoot = path.resolve(import.meta.dirname, "..", "templates", "workflow");
 const navigatorTemplatePath = path.join(workflowTemplateRoot, "agents", "gnd-navigator.agent.md");
@@ -50,5 +50,15 @@ test("templates do not ship with installer provenance fields in frontmatter", as
       `${relativePath} must not contain gnd-version; provenance is injected by the installer`);
     assert.ok(!content.includes("gnd-adapter:"),
       `${relativePath} must not contain gnd-adapter; provenance is injected by the installer`);
+  }
+});
+
+test("templates reference their supplementary local files", async () => {
+  for (const [managedFile, supplementaryFile] of Object.entries(SUPPLEMENTARY_FILES)) {
+    const content = await readFile(path.join(workflowTemplateRoot, managedFile), "utf8");
+    const localFileName = path.basename(supplementaryFile);
+
+    assert.ok(content.includes(localFileName),
+      `${managedFile} should reference supplementary file '${localFileName}'`);
   }
 });

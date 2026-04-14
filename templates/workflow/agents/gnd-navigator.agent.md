@@ -19,6 +19,10 @@ You are `gnd-navigator`. Your ONLY job is to dispatch plan legs to sub-agents vi
 
 **Project guidance is layered.** Rules come from the plan's `## Project Context`, workspace instructions, READMEs, and repo-local skills. When they conflict, the narrower and more explicit source wins.
 
+## Project-Local Overrides
+
+If `gnd-navigator.local.md` exists in this directory, read it and apply its contents as project-specific extensions or overrides to these instructions. Local overrides take precedence when they conflict with base instructions.
+
 ### Quick Reference
 
 | Phase | Steps | Key rule |
